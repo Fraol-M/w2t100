@@ -84,29 +84,20 @@ for i in $(seq 1 60); do
     sleep 1
 done
 
-# DSN for the test suite — matches what test/setup_test.go expects
-TEST_DSN="root:${MYSQL_ROOT_PASSWORD}@tcp(${DB_CONTAINER}:3306)/${MYSQL_DATABASE}?parseTime=true&multiStatements=true"
+# DSN passed to test/setup_test.go via TEST_MYSQL_DSN (the exact env var name
+# the test helper reads). Schema creation is handled inside each test via
+# GORM AutoMigrate — no separate migration binary run is needed.
+TEST_MYSQL_DSN="root:${MYSQL_ROOT_PASSWORD}@tcp(${DB_CONTAINER}:3306)/${MYSQL_DATABASE}?parseTime=true&multiStatements=true"
 
-# ── 5. Run migration inside the test container before tests ──────────────────
-echo "==> Running database migrations"
-docker run --rm \
-    --network "${NETWORK_NAME}" \
-    -e DB_DSN="${TEST_DSN}" \
-    -e MIGRATE_CMD="up" \
-    "${IMAGE_NAME}:latest" \
-    go run ./cmd/migrate/main.go
-
-# ── 6. Run the test suite ─────────────────────────────────────────────────────
+# ── 5. Run the test suite ─────────────────────────────────────────────────────
 echo "==> Running tests: go test ${TEST_ARGS[*]}"
 docker run --rm \
     --network "${NETWORK_NAME}" \
     -e CGO_ENABLED=1 \
-    -e DB_DSN="${TEST_DSN}" \
-    -e TEST_DSN="${TEST_DSN}" \
-    -e ENV=test \
+    -e TEST_MYSQL_DSN="${TEST_MYSQL_DSN}" \
     -e STORAGE_ROOT=/tmp/propertyops-test-storage \
-    -e ENCRYPTION_KEY="dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleTA=" \
-    -e SESSION_SECRET="testsecrettestsecrettestsecret32" \
+    -e ENCRYPTION_KEY_DIR=/tmp/propertyops-test-keys \
+    -e ENCRYPTION_ACTIVE_KEY_ID=1 \
     "${IMAGE_NAME}:latest" \
     go test "${TEST_ARGS[@]}"
 
