@@ -1,0 +1,71 @@
+-- Migration 000008: Payments, Payment Approvals, Reconciliation Runs
+
+CREATE TABLE IF NOT EXISTS payments (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    uuid CHAR(36) NOT NULL,
+    work_order_id BIGINT UNSIGNED DEFAULT NULL,
+    tenant_id BIGINT UNSIGNED DEFAULT NULL,
+    unit_id BIGINT UNSIGNED DEFAULT NULL,
+    property_id BIGINT UNSIGNED NOT NULL,
+    kind VARCHAR(30) NOT NULL,
+    amount DECIMAL(12,2) NOT NULL,
+    currency VARCHAR(3) NOT NULL DEFAULT 'USD',
+    status VARCHAR(20) NOT NULL DEFAULT 'Pending',
+    description VARCHAR(500) DEFAULT NULL,
+    expires_at TIMESTAMP NULL DEFAULT NULL,
+    paid_at TIMESTAMP NULL DEFAULT NULL,
+    paid_by BIGINT UNSIGNED DEFAULT NULL,
+    reversed_at TIMESTAMP NULL DEFAULT NULL,
+    reversal_reason TEXT DEFAULT NULL,
+    related_payment_id BIGINT UNSIGNED DEFAULT NULL,
+    created_by BIGINT UNSIGNED NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE INDEX idx_payments_uuid (uuid),
+    INDEX idx_payments_status_kind (status, kind),
+    INDEX idx_payments_property (property_id),
+    INDEX idx_payments_tenant (tenant_id),
+    INDEX idx_payments_work_order (work_order_id),
+    INDEX idx_payments_expires (expires_at),
+    INDEX idx_payments_created_at (created_at),
+    CONSTRAINT fk_payments_work_order FOREIGN KEY (work_order_id) REFERENCES work_orders(id) ON DELETE SET NULL,
+    CONSTRAINT fk_payments_tenant FOREIGN KEY (tenant_id) REFERENCES users(id) ON DELETE SET NULL,
+    CONSTRAINT fk_payments_unit FOREIGN KEY (unit_id) REFERENCES units(id) ON DELETE SET NULL,
+    CONSTRAINT fk_payments_property FOREIGN KEY (property_id) REFERENCES properties(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_payments_paid_by FOREIGN KEY (paid_by) REFERENCES users(id) ON DELETE SET NULL,
+    CONSTRAINT fk_payments_related FOREIGN KEY (related_payment_id) REFERENCES payments(id) ON DELETE SET NULL,
+    CONSTRAINT fk_payments_created_by FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS payment_approvals (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    payment_id BIGINT UNSIGNED NOT NULL,
+    approver_id BIGINT UNSIGNED NOT NULL,
+    approval_order TINYINT UNSIGNED NOT NULL,
+    notes TEXT DEFAULT NULL,
+    approved_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE INDEX idx_payment_approval_unique (payment_id, approval_order),
+    UNIQUE INDEX idx_payment_approval_user (payment_id, approver_id),
+    INDEX idx_payment_approval_approver (approver_id),
+    CONSTRAINT fk_payment_approval_payment FOREIGN KEY (payment_id) REFERENCES payments(id) ON DELETE CASCADE,
+    CONSTRAINT fk_payment_approval_approver FOREIGN KEY (approver_id) REFERENCES users(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS reconciliation_runs (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    uuid CHAR(36) NOT NULL,
+    run_date DATE NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'Running',
+    total_expected DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    total_actual DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    discrepancy_count INT NOT NULL DEFAULT 0,
+    summary JSON DEFAULT NULL,
+    statement_file_path VARCHAR(512) DEFAULT NULL,
+    generated_by BIGINT UNSIGNED NOT NULL,
+    started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP NULL DEFAULT NULL,
+    UNIQUE INDEX idx_reconciliation_uuid (uuid),
+    INDEX idx_reconciliation_date (run_date),
+    INDEX idx_reconciliation_status (status),
+    CONSTRAINT fk_reconciliation_generated_by FOREIGN KEY (generated_by) REFERENCES users(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

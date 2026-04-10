@@ -1,0 +1,14 @@
+.env
+.data/
+.secrets/
+tmp/
+*.exe
+*.test
+*.out
+*.log
+coverage.html
+*.prof
+vendor/
+.claude
+
+

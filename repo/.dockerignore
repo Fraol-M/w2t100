@@ -1,0 +1,12 @@
+.git
+.env
+.data
+.secrets
+tmp/
+vendor/
+*.exe
+*.test
+*.out
+*.log
+coverage.html
+*.prof
