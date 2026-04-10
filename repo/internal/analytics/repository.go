@@ -28,7 +28,7 @@ func (r *Repository) PopularityMetrics(filters AnalyticsFilters) ([]PopularityMe
 
 	q = q.Group("issue_type").Order("count DESC")
 
-	var results []PopularityMetric
+	results := make([]PopularityMetric, 0)
 	if err := q.Scan(&results).Error; err != nil {
 		return nil, err
 	}
@@ -146,7 +146,7 @@ func (r *Repository) TagAnalysis(filters AnalyticsFilters) ([]TagMetric, error) 
 	q = applyWorkOrderFilters(q, filters)
 	q = q.Group("skill_tag").Order("count DESC").Limit(50)
 
-	var skillTagResults []TagMetric
+	skillTagResults := make([]TagMetric, 0)
 	if err := q.Scan(&skillTagResults).Error; err != nil {
 		return nil, err
 	}
@@ -176,7 +176,7 @@ func (r *Repository) TagAnalysis(filters AnalyticsFilters) ([]TagMetric, error) 
 		ORDER BY count DESC
 		LIMIT 50`
 
-	var jsonTagResults []TagMetric
+	jsonTagResults := make([]TagMetric, 0)
 	if err := r.db.Raw(jsonTagSQL, jsonArgs...).Scan(&jsonTagResults).Error; err != nil {
 		// JSON_TABLE requires MySQL 8.0+; log and fall back to skill_tag results only.
 		log.Printf("WARN analytics: JSON tag analysis skipped (requires MySQL 8.0+): %v", err)
@@ -279,7 +279,7 @@ func (r *Repository) ListSavedReports(ownerID uint64, page, perPage int) ([]Save
 		return nil, 0, err
 	}
 
-	var reports []SavedReport
+	reports := make([]SavedReport, 0)
 	if err := q.Order("created_at DESC").Offset(offset).Limit(perPage).Find(&reports).Error; err != nil {
 		return nil, 0, err
 	}
@@ -333,7 +333,7 @@ func (r *Repository) ListGeneratedReports(savedID *uint64, page, perPage int) ([
 		return nil, 0, err
 	}
 
-	var reports []GeneratedReport
+	reports := make([]GeneratedReport, 0)
 	if err := q.Order("generated_at DESC").Offset(offset).Limit(perPage).Find(&reports).Error; err != nil {
 		return nil, 0, err
 	}

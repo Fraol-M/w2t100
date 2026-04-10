@@ -109,6 +109,24 @@ func TestPopularityMetrics_PropertyFilter(t *testing.T) {
 	}
 }
 
+// TestPopularityMetrics_EmptyReturnsNonNilSlice ensures the repository returns
+// an empty JSON-array-compatible slice (not nil) when there are no rows.
+func TestPopularityMetrics_EmptyReturnsNonNilSlice(t *testing.T) {
+	db := setupAnalyticsTestDB(t)
+	repo := NewRepository(db)
+
+	results, err := repo.PopularityMetrics(AnalyticsFilters{})
+	if err != nil {
+		t.Fatalf("PopularityMetrics: %v", err)
+	}
+	if results == nil {
+		t.Fatal("expected non-nil empty slice, got nil")
+	}
+	if len(results) != 0 {
+		t.Fatalf("expected no popularity rows, got %d", len(results))
+	}
+}
+
 // --- Funnel ---
 
 // TestConversionFunnel_DB verifies that ConversionFunnel counts each status bucket correctly.
@@ -260,6 +278,24 @@ func TestTagAnalysis_SkillTag_DB(t *testing.T) {
 	}
 }
 
+// TestTagAnalysis_EmptyReturnsNonNilSlice ensures empty tag results are
+// returned as a non-nil slice so API encoding stays [] instead of null.
+func TestTagAnalysis_EmptyReturnsNonNilSlice(t *testing.T) {
+	db := setupAnalyticsTestDB(t)
+	repo := NewRepository(db)
+
+	tags, err := repo.TagAnalysis(AnalyticsFilters{})
+	if err != nil {
+		t.Fatalf("TagAnalysis: %v", err)
+	}
+	if tags == nil {
+		t.Fatal("expected non-nil empty slice, got nil")
+	}
+	if len(tags) != 0 {
+		t.Fatalf("expected no tag rows, got %d", len(tags))
+	}
+}
+
 // --- SavedReport CRUD ---
 
 // TestSavedReport_ServiceCRUD_DB exercises the full SavedReport create/get/list/delete
@@ -349,5 +385,47 @@ func TestSavedReport_InvalidSchedule_DB(t *testing.T) {
 	}, 1)
 	if appErr == nil {
 		t.Error("expected validation error for unsupported schedule, got nil")
+	}
+}
+
+// TestListSavedReports_EmptyReturnsNonNilSlice verifies list endpoints can
+// serialize empty data as [] when the owner has no saved reports.
+func TestListSavedReports_EmptyReturnsNonNilSlice(t *testing.T) {
+	db := setupAnalyticsTestDB(t)
+	repo := NewRepository(db)
+
+	reports, total, err := repo.ListSavedReports(777, 1, 20)
+	if err != nil {
+		t.Fatalf("ListSavedReports: %v", err)
+	}
+	if reports == nil {
+		t.Fatal("expected non-nil empty slice, got nil")
+	}
+	if total != 0 {
+		t.Fatalf("expected total=0, got %d", total)
+	}
+	if len(reports) != 0 {
+		t.Fatalf("expected no reports, got %d", len(reports))
+	}
+}
+
+// TestListGeneratedReports_EmptyReturnsNonNilSlice verifies generated report
+// listing returns [] (not null) when there are no generated reports.
+func TestListGeneratedReports_EmptyReturnsNonNilSlice(t *testing.T) {
+	db := setupAnalyticsTestDB(t)
+	repo := NewRepository(db)
+
+	reports, total, err := repo.ListGeneratedReports(nil, 1, 20)
+	if err != nil {
+		t.Fatalf("ListGeneratedReports: %v", err)
+	}
+	if reports == nil {
+		t.Fatal("expected non-nil empty slice, got nil")
+	}
+	if total != 0 {
+		t.Fatalf("expected total=0, got %d", total)
+	}
+	if len(reports) != 0 {
+		t.Fatalf("expected no reports, got %d", len(reports))
 	}
 }
