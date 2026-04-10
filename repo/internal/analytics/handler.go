@@ -266,9 +266,8 @@ func (h *Handler) GetGeneratedReport(c *gin.Context) {
 // --- helpers ---
 
 // enforcePMScope checks whether the actor is a PM (non-admin) and, if so, verifies that
-// the requested property_id is within their managed portfolio.  If no property_id is
-// supplied the actor must be SystemAdmin — PMs are required to scope their queries to a
-// specific managed property to prevent cross-portfolio data leakage.
+// a provided property_id is within their managed portfolio.
+// If property_id is omitted, PMs are allowed to proceed with unscoped analytics queries.
 // Returns the (possibly clamped) filters and true if the caller should proceed.
 func (h *Handler) enforcePMScope(c *gin.Context, filters AnalyticsFilters) (AnalyticsFilters, bool) {
 	roles := c.GetStringSlice(string(common.CtxKeyRoles))
@@ -279,10 +278,9 @@ func (h *Handler) enforcePMScope(c *gin.Context, filters AnalyticsFilters) (Anal
 		return filters, true // SystemAdmin or non-PM: no additional restriction
 	}
 
-	// PM: property_id is mandatory.
+	// PM with no property_id: allow unscoped query.
 	if filters.PropertyID == nil {
-		common.RespondError(c, common.NewForbiddenError("property_id is required for PropertyManager analytics queries"))
-		return filters, false
+		return filters, true
 	}
 
 	userID := c.GetUint64(string(common.CtxKeyUserID))

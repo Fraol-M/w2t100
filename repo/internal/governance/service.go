@@ -52,6 +52,7 @@ const (
 	ReportCategoryNoise       = "Noise"
 	ReportCategoryMaintenance = "Maintenance"
 	ReportCategoryFraud       = "Fraud"
+	ReportCategorySpam        = "Spam"
 	ReportCategoryOther       = "Other"
 )
 
@@ -61,6 +62,7 @@ var validReportCategories = map[string]bool{
 	ReportCategoryNoise:       true,
 	ReportCategoryMaintenance: true,
 	ReportCategoryFraud:       true,
+	ReportCategorySpam:        true,
 	ReportCategoryOther:       true,
 }
 
@@ -80,7 +82,7 @@ func (s *Service) CreateReport(req CreateReportRequest, reporterID uint64, ip, r
 	if !validReportCategories[req.Category] {
 		fieldErrors = append(fieldErrors, &common.FieldError{
 			Field:   "category",
-			Message: fmt.Sprintf("must be one of: Harassment, Damage, Noise, Maintenance, Fraud, Other"),
+			Message: fmt.Sprintf("must be one of: Harassment, Damage, Noise, Maintenance, Fraud, Spam, Other"),
 		})
 	}
 	if fe := common.ValidateDescription(req.Description); fe != nil {

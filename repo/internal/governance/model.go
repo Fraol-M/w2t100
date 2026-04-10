@@ -59,7 +59,7 @@ type KeywordBlacklist struct {
 	Keyword   string    `gorm:"size:255;uniqueIndex" json:"keyword"`
 	Category  string    `gorm:"size:50;default:General" json:"category"`
 	Severity  string    `gorm:"size:20;default:Medium" json:"severity"`
-	IsActive  bool      `gorm:"default:true" json:"is_active"`
+	IsActive  bool      `json:"is_active"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

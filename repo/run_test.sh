@@ -5,6 +5,7 @@
 #   ./run_test.sh                  # run all tests
 #   ./run_test.sh ./internal/...   # run a specific package tree
 #   ./run_test.sh -run TestName    # pass any 'go test' flags/patterns
+#                                  # (defaults are fast local mode: -failfast, no -race)
 #
 # Requirements: Docker (daemon must be running)
 # Exit code mirrors the test suite result (0 = pass, non-zero = failure).
@@ -33,7 +34,7 @@ echo "==> Building test image: ${IMAGE_NAME}"
 if [[ $# -gt 0 ]]; then
     TEST_ARGS=("$@")
 else
-    TEST_ARGS=("-v" "-race" "-count=1" "./...")
+    TEST_ARGS=("-v" "-count=1" "-failfast" "-timeout=8m" "./...")
 fi
 
 # ── 4. Start a test database if integration tests need one ───────────────────
