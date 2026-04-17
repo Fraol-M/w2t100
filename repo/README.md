@@ -129,11 +129,26 @@ All configuration is provided via environment variables. Copy `.env.example` to 
 
 ## Running Tests
 
+The authoritative test runner is the Docker-based script, which spins up an ephemeral MySQL 8.0 container so integration tests run against full MySQL semantics:
+
 ```bash
-go test ./...
+# Full suite — internal unit tests + integration tests (default)
+bash run_test.sh
+
+# Fast mode — internal/unit only, no Docker MySQL required
+bash run_test.sh --fast
+
+# Full suite with coverage breakdown
+bash run_test.sh --coverage
 ```
 
-Run a specific package:
+Run a specific test by name (custom mode, MySQL container still started):
+
+```bash
+bash run_test.sh -run TestPaymentIntent_CreatesWithExpiry
+```
+
+To run internal package tests locally without Docker (requires CGO/gcc):
 
 ```bash
 go test ./internal/workorders/... -v
@@ -143,11 +158,22 @@ go test ./internal/payments/... -v
 
 ## Docker Commands
 
+Both the modern V2 plugin syntax (`docker compose`) and the legacy V1 standalone binary syntax (`docker-compose`) are supported. To start the full stack with the V1 binary and default settings:
+
+```bash
+docker-compose up
+```
+
+The commands below use the V2 form with the explicit compose file; substitute `docker-compose` for `docker compose` if you have the standalone binary installed.
+
 ```bash
 # Build images
 docker compose -f deploy/docker-compose.yml build
 
-# Start all services
+# Start all services (foreground, streams logs to terminal)
+docker compose -f deploy/docker-compose.yml up
+
+# Start all services (detached / background)
 docker compose -f deploy/docker-compose.yml up -d
 
 # Start only the database
@@ -218,3 +244,55 @@ curl -s http://localhost:8080/api/v1/auth/me \
 ```
 
 See `docs/manual-verification.md` for the complete step-by-step verification guide.
+
+## Demo Credentials
+
+Use the following accounts for local development and review. The admin account is created by the bootstrap seed; the remaining role accounts are created via the Users API after the admin logs in.
+
+**Step 1 — Seed with a known admin password:**
+
+```bash
+ADMIN_BOOTSTRAP_PASSWORD=Admin123! \
+  docker-compose -f deploy/docker-compose.yml run --rm migrate -seed
+```
+
+**Step 2 — Create one demo user per remaining role:**
+
+```bash
+# Obtain admin token
+TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"Admin123!"}' | jq -r '.data.token')
+
+# Tenant
+curl -s -X POST http://localhost:8080/api/v1/users \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
+  -d '{"username":"demo_tenant","email":"demo_tenant@example.local","password":"Demo123!","first_name":"Demo","last_name":"Tenant","role_names":["Tenant"]}' | jq .
+
+# Technician
+curl -s -X POST http://localhost:8080/api/v1/users \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
+  -d '{"username":"demo_technician","email":"demo_technician@example.local","password":"Demo123!","first_name":"Demo","last_name":"Technician","role_names":["Technician"]}' | jq .
+
+# PropertyManager
+curl -s -X POST http://localhost:8080/api/v1/users \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
+  -d '{"username":"demo_pm","email":"demo_pm@example.local","password":"Demo123!","first_name":"Demo","last_name":"PropertyManager","role_names":["PropertyManager"]}' | jq .
+
+# ComplianceReviewer
+curl -s -X POST http://localhost:8080/api/v1/users \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
+  -d '{"username":"demo_reviewer","email":"demo_reviewer@example.local","password":"Demo123!","first_name":"Demo","last_name":"Reviewer","role_names":["ComplianceReviewer"]}' | jq .
+```
+
+**Demo account credentials:**
+
+| Role | Username | Password |
+|------|----------|----------|
+| SystemAdmin | `admin` | `Admin123!` |
+| Tenant | `demo_tenant` | `Demo123!` |
+| Technician | `demo_technician` | `Demo123!` |
+| PropertyManager | `demo_pm` | `Demo123!` |
+| ComplianceReviewer | `demo_reviewer` | `Demo123!` |
+
+> **Important:** These credentials are for local development only. Change all passwords before deploying to any shared or production environment.
