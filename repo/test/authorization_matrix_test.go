@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -16,10 +17,10 @@ import (
 
 // matrixEnv holds a single DB + router shared by all sub-tests in the matrix.
 type matrixEnv struct {
-	db     *gorm.DB
-	cfg    *config.Config
-	router *gin.Engine
-	tokens map[string]string // role → bearer token
+	db      *gorm.DB
+	cfg     *config.Config
+	router  *gin.Engine
+	tokens  map[string]string // role → bearer token
 	userIDs map[string]uint64
 }
 
@@ -32,10 +33,10 @@ func setupMatrixEnv(t *testing.T) *matrixEnv {
 	router := newTestRouter(db, cfg)
 
 	env := &matrixEnv{
-		db:     db,
-		cfg:    cfg,
-		router: router,
-		tokens: make(map[string]string),
+		db:      db,
+		cfg:     cfg,
+		router:  router,
+		tokens:  make(map[string]string),
 		userIDs: make(map[string]uint64),
 	}
 
@@ -58,20 +59,20 @@ func setupMatrixEnv(t *testing.T) *matrixEnv {
 	// - Tenant work-order create enforces tenant profile -> unit -> property matching.
 	// - PM payment intent create enforces active PropertyManager assignment.
 	if err := db.Exec(`INSERT INTO properties (id, uuid, name, address_line1, city, state, zip_code, timezone, is_active, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-		1, newUUID(), "Matrix Property", "1 Matrix Way", "Austin", "TX", "78701", "America/New_York", true).Error; err != nil {
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		1, newUUID(), "Matrix Property", "1 Matrix Way", "Austin", "TX", "78701", "America/New_York", true, time.Now(), time.Now()).Error; err != nil {
 		t.Fatalf("setupMatrixEnv: insert property: %v", err)
 	}
 
 	if err := db.Exec(`INSERT INTO units (id, uuid, property_id, unit_number, status, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, NOW(), NOW())`,
-		1, newUUID(), 1, "101", "Occupied").Error; err != nil {
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		1, newUUID(), 1, "101", "Occupied", time.Now(), time.Now()).Error; err != nil {
 		t.Fatalf("setupMatrixEnv: insert unit: %v", err)
 	}
 
 	if err := db.Exec(`INSERT INTO tenant_profiles (uuid, user_id, unit_id, created_at, updated_at)
-		VALUES (?, ?, ?, NOW(), NOW())`,
-		newUUID(), env.userIDs[common.RoleTenant], 1).Error; err != nil {
+		VALUES (?, ?, ?, ?, ?)`,
+		newUUID(), env.userIDs[common.RoleTenant], 1, time.Now(), time.Now()).Error; err != nil {
 		t.Fatalf("setupMatrixEnv: insert tenant profile: %v", err)
 	}
 
@@ -410,7 +411,9 @@ func matrixSetupWorkOrder(t *testing.T, env *matrixEnv) uint64 {
 		return 1 // fallback; GET /work-orders/1 will just 404
 	}
 	var resp struct {
-		Data struct{ ID uint64 `json:"id"` } `json:"data"`
+		Data struct {
+			ID uint64 `json:"id"`
+		} `json:"data"`
 	}
 	parseResponse(t, w, &resp)
 	return resp.Data.ID
@@ -429,7 +432,9 @@ func matrixSetupPayment(t *testing.T, env *matrixEnv) uint64 {
 		return 1
 	}
 	var resp struct {
-		Data struct{ ID uint64 `json:"id"` } `json:"data"`
+		Data struct {
+			ID uint64 `json:"id"`
+		} `json:"data"`
 	}
 	parseResponse(t, w, &resp)
 	return resp.Data.ID
@@ -450,7 +455,9 @@ func matrixSetupReport(t *testing.T, env *matrixEnv) uint64 {
 		return 1
 	}
 	var resp struct {
-		Data struct{ ID uint64 `json:"id"` } `json:"data"`
+		Data struct {
+			ID uint64 `json:"id"`
+		} `json:"data"`
 	}
 	parseResponse(t, w, &resp)
 	return resp.Data.ID
@@ -474,7 +481,9 @@ func matrixSetupEnforcement(t *testing.T, env *matrixEnv) uint64 {
 		return 1
 	}
 	var resp struct {
-		Data struct{ ID uint64 `json:"id"` } `json:"data"`
+		Data struct {
+			ID uint64 `json:"id"`
+		} `json:"data"`
 	}
 	parseResponse(t, w, &resp)
 
@@ -515,7 +524,9 @@ func TestPMScope_Payment_UnassignedPMSeesEmptyList(t *testing.T) {
 	assertStatus(t, w, http.StatusCreated)
 
 	var createResp struct {
-		Data struct{ ID uint64 `json:"id"` } `json:"data"`
+		Data struct {
+			ID uint64 `json:"id"`
+		} `json:"data"`
 	}
 	parseResponse(t, w, &createResp)
 	paymentID := createResp.Data.ID
@@ -528,7 +539,9 @@ func TestPMScope_Payment_UnassignedPMSeesEmptyList(t *testing.T) {
 	assertStatus(t, w, http.StatusOK)
 
 	var listResp struct {
-		Data []struct{ ID uint64 `json:"id"` } `json:"data"`
+		Data []struct {
+			ID uint64 `json:"id"`
+		} `json:"data"`
 	}
 	parseResponse(t, w, &listResp)
 	if len(listResp.Data) != 0 {
@@ -571,7 +584,9 @@ func TestPMScope_Attachment_DeleteBlockedForUnassignedPM(t *testing.T) {
 	assertStatus(t, w, http.StatusCreated)
 
 	var woResp struct {
-		Data struct{ ID uint64 `json:"id"` } `json:"data"`
+		Data struct {
+			ID uint64 `json:"id"`
+		} `json:"data"`
 	}
 	parseResponse(t, w, &woResp)
 	woID := woResp.Data.ID

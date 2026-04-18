@@ -14,7 +14,7 @@ import (
 func assignManagerToPropertyDB(t *testing.T, env *plainEnv, managerID, propertyID uint64) {
 	t.Helper()
 	if err := env.db.Exec(
-		"INSERT INTO property_staff_assignments (property_id, user_id, role, is_active, created_at) VALUES (?, ?, 'PropertyManager', true, datetime('now'))",
+		"INSERT INTO property_staff_assignments (property_id, user_id, role, is_active, created_at) VALUES (?, ?, 'PropertyManager', true, NOW())",
 		propertyID, managerID,
 	).Error; err != nil {
 		t.Fatalf("assignManagerToPropertyDB: %v", err)

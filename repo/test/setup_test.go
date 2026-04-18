@@ -11,10 +11,10 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"propertyops/backend/internal/attachments"
 	"propertyops/backend/internal/analytics"
-	authpkg "propertyops/backend/internal/auth"
+	"propertyops/backend/internal/attachments"
 	"propertyops/backend/internal/audit"
+	authpkg "propertyops/backend/internal/auth"
 	"propertyops/backend/internal/governance"
 	"propertyops/backend/internal/notifications"
 	"propertyops/backend/internal/payments"
@@ -84,6 +84,20 @@ func setupMySQLTestDB(t *testing.T, dsn string) *gorm.DB {
 	if err != nil {
 		t.Fatalf("MySQL connection failed (TEST_MYSQL_DSN=%q): %v", dsn, err)
 	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to get sql.DB from gorm: %v", err)
+	}
+	// Keep per-test connection usage bounded so long integration runs do not
+	// exhaust MySQL's max_connections limit.
+	sqlDB.SetMaxOpenConns(5)
+	sqlDB.SetMaxIdleConns(2)
+	sqlDB.SetConnMaxIdleTime(30 * time.Second)
+	sqlDB.SetConnMaxLifetime(2 * time.Minute)
+	t.Cleanup(func() {
+		_ = sqlDB.Close()
+	})
 
 	if err := db.AutoMigrate(allModels()...); err != nil {
 		t.Fatalf("MySQL AutoMigrate failed: %v", err)

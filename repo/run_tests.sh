@@ -2,11 +2,12 @@
 # run_test.sh — build a CGO-enabled test image and run Go tests inside Docker.
 #
 # Usage:
-#   ./run_test.sh                     # run the FULL suite (./...) — includes integration tests
+#   ./run_test.sh                     # run the FUNDAMENTAL suite (./cmd/... ./internal/...)
 #   ./run_test.sh --fast              # run fundamental tests only (./cmd/... ./internal/...)
 #   ./run_test.sh --fundamental       # alias for --fast
 #   ./run_test.sh --core              # alias for --fast
-#   ./run_test.sh --full              # explicit full mode (alias of default)
+#   ./run_test.sh --full              # run FULL suite (./...) including integration tests
+#   ./run_test.sh --no-build          # skip docker build and reuse existing test image
 #   ./run_test.sh --coverage          # add coverage instrumentation + print a
 #                                     # per-package breakdown and total % after
 #                                     # the run. Combines with --full/--fast.
@@ -21,27 +22,18 @@ set -euo pipefail
 
 IMAGE_NAME="propertyops-test"
 DOCKERFILE="deploy/Dockerfile.test"
+SKIP_BUILD=0
 
 # ── 1. Resolve repo root (directory containing this script) ──────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# ── 2. Build the test image ───────────────────────────────────────────────────
-echo "==> Building test image: ${IMAGE_NAME}"
-# BuildKit in some environments strips directory prefixes from --file.
-# Workaround: cd into the directory that contains the Dockerfile and pass
-# just the filename; use the repo root as the build context via a relative path.
-(cd "${SCRIPT_DIR}/deploy" && docker build \
-    --file Dockerfile.test \
-    --tag  "${IMAGE_NAME}:latest" \
-    ..)
-
 # ── 3. Determine test target / extra flags ───────────────────────────────────
-# Default mode is "full" so the bare `./run_test.sh` invocation runs every
-# package, including the integration suite under ./test/...
-# Use --fast / --fundamental / --core to opt out of the integration flows.
+# Default mode is "fundamental" so the bare `./run_test.sh` invocation stays
+# fast and avoids heavy integration flows under ./test/...
+# Use --full to explicitly include integration tests.
 # --coverage instruments the run and prints a summary after tests complete.
-RUN_MODE="full"
+RUN_MODE="fundamental"
 COLLECT_COVERAGE=0
 while [[ $# -gt 0 ]]; do
     case "${1}" in
@@ -51,6 +43,8 @@ while [[ $# -gt 0 ]]; do
             RUN_MODE="fundamental"; shift ;;
         --coverage|--cover)
             COLLECT_COVERAGE=1; shift ;;
+        --no-build|--skip-build)
+            SKIP_BUILD=1; shift ;;
         *)
             break ;;
     esac
@@ -81,6 +75,28 @@ if [[ "${COLLECT_COVERAGE}" -eq 1 ]]; then
     TEST_ARGS+=("-coverpkg=./internal/...")
     TEST_ARGS+=("-coverprofile=${COVERAGE_FILE}")
     echo "==> Coverage: ENABLED (profile will be written to ${COVERAGE_FILE} inside container)"
+fi
+
+# ── 3b. Build (or reuse) the test image ───────────────────────────────────────
+if [[ "${SKIP_BUILD}" -eq 1 ]]; then
+    if docker image inspect "${IMAGE_NAME}:latest" >/dev/null 2>&1; then
+        echo "==> Reusing existing test image: ${IMAGE_NAME}:latest (build skipped)"
+    else
+        echo "==> --no-build requested, but image not found. Building once: ${IMAGE_NAME}:latest"
+        (cd "${SCRIPT_DIR}/deploy" && docker build \
+            --file Dockerfile.test \
+            --tag  "${IMAGE_NAME}:latest" \
+            ..)
+    fi
+else
+    echo "==> Building test image: ${IMAGE_NAME}"
+    # BuildKit in some environments strips directory prefixes from --file.
+    # Workaround: cd into the directory that contains the Dockerfile and pass
+    # just the filename; use the repo root as the build context via a relative path.
+    (cd "${SCRIPT_DIR}/deploy" && docker build \
+        --file Dockerfile.test \
+        --tag  "${IMAGE_NAME}:latest" \
+        ..)
 fi
 
 # ── 4. Start a test database if integration tests need one ───────────────────

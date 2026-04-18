@@ -3,6 +3,7 @@ package analytics
 import (
 	"log"
 	"sort"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -88,7 +89,9 @@ func (r *Repository) RetentionMetrics(filters AnalyticsFilters) (*RetentionMetri
 		if !filters.From.IsZero() {
 			q = q.Where("created_at >= ?", filters.From)
 		} else {
-			q = q.Where("created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)", days)
+			// Using dynamic string for sqlite compatibility as well, although in Go we can just compute the date
+			fromDate := time.Now().AddDate(0, 0, -days)
+			q = q.Where("created_at >= ?", fromDate)
 		}
 		if !filters.To.IsZero() {
 			q = q.Where("created_at <= ?", filters.To)

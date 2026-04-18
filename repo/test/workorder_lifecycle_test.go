@@ -36,8 +36,11 @@ func TestWorkOrderLifecycle(t *testing.T) {
 	env := newWOEnv(t)
 
 	tenantUser, tenantPw := createTestUser(t, env.db, "lc_tenant", common.RoleTenant)
-	_, techPw := createTestUser(t, env.db, "lc_tech", common.RoleTechnician)
-	_, managerPw := createTestUser(t, env.db, "lc_manager", common.RolePropertyManager)
+	techUser, techPw := createTestUser(t, env.db, "lc_tech", common.RoleTechnician)
+	managerUser, managerPw := createTestUser(t, env.db, "lc_manager", common.RolePropertyManager)
+
+	// Manager must be assigned to the property for manager-owned transitions.
+	assignManagerToProperty(t, env, managerUser.ID, 1)
 
 	tenantToken := loginUser(t, env.router, "lc_tenant", tenantPw)
 	techToken := loginUser(t, env.router, "lc_tech", techPw)
@@ -82,6 +85,9 @@ func TestWorkOrderLifecycle(t *testing.T) {
 		fmt.Sprintf("/api/v1/work-orders/%d/transition", woID), managerToken,
 		map[string]string{"to_status": common.WOStatusAssigned})
 	assertStatus(t, w, http.StatusOK)
+
+	// Assign the technician so technician-owned transitions are authorized.
+	assignTechnicianToWO(t, env, woID, techUser.ID)
 
 	// Step 3: Technician transitions Assigned → InProgress.
 	w = makeRequest(t, env.router, http.MethodPost,
@@ -169,10 +175,10 @@ func TestWorkOrderInvalidTransition(t *testing.T) {
 	env := newWOEnv(t)
 
 	_, tenantPw := createTestUser(t, env.db, "inv_tenant", common.RoleTenant)
-	_, managerPw := createTestUser(t, env.db, "inv_manager", common.RolePropertyManager)
+	_, adminPw := createTestUser(t, env.db, "inv_admin", common.RoleSystemAdmin)
 
 	tenantToken := loginUser(t, env.router, "inv_tenant", tenantPw)
-	managerToken := loginUser(t, env.router, "inv_manager", managerPw)
+	adminToken := loginUser(t, env.router, "inv_admin", adminPw)
 
 	w := makeRequest(t, env.router, http.MethodPost, "/api/v1/work-orders", tenantToken, map[string]interface{}{
 		"property_id": 1,
@@ -182,14 +188,16 @@ func TestWorkOrderInvalidTransition(t *testing.T) {
 	assertStatus(t, w, http.StatusCreated)
 
 	var createResp struct {
-		Data struct{ ID uint64 `json:"id"` } `json:"data"`
+		Data struct {
+			ID uint64 `json:"id"`
+		} `json:"data"`
 	}
 	parseResponse(t, w, &createResp)
 	woID := createResp.Data.ID
 
 	// Attempt invalid transition: New → Completed.
 	w = makeRequest(t, env.router, http.MethodPost,
-		fmt.Sprintf("/api/v1/work-orders/%d/transition", woID), managerToken,
+		fmt.Sprintf("/api/v1/work-orders/%d/transition", woID), adminToken,
 		map[string]string{"to_status": common.WOStatusCompleted})
 	if w.Code != http.StatusUnprocessableEntity && w.Code != http.StatusBadRequest {
 		t.Errorf("expected 422 or 400 for invalid transition, got %d; body: %s", w.Code, w.Body.String())
@@ -202,9 +210,11 @@ func TestWorkOrderReassign_RequiresReason(t *testing.T) {
 	env := newWOEnv(t)
 
 	_, tenantPw := createTestUser(t, env.db, "re_tenant", common.RoleTenant)
-	_, tech1Pw := createTestUser(t, env.db, "re_tech1", common.RoleTechnician)
+	tech1User, tech1Pw := createTestUser(t, env.db, "re_tech1", common.RoleTechnician)
 	tech2, _ := createTestUser(t, env.db, "re_tech2", common.RoleTechnician)
-	_, managerPw := createTestUser(t, env.db, "re_manager", common.RolePropertyManager)
+	managerUser, managerPw := createTestUser(t, env.db, "re_manager", common.RolePropertyManager)
+
+	assignManagerToProperty(t, env, managerUser.ID, 1)
 
 	tenantToken := loginUser(t, env.router, "re_tenant", tenantPw)
 	tech1Token := loginUser(t, env.router, "re_tech1", tech1Pw)
@@ -218,17 +228,23 @@ func TestWorkOrderReassign_RequiresReason(t *testing.T) {
 	})
 	assertStatus(t, w, http.StatusCreated)
 	var createResp struct {
-		Data struct{ ID uint64 `json:"id"` } `json:"data"`
+		Data struct {
+			ID uint64 `json:"id"`
+		} `json:"data"`
 	}
 	parseResponse(t, w, &createResp)
 	woID := createResp.Data.ID
 
-	makeRequest(t, env.router, http.MethodPost,
+	w = makeRequest(t, env.router, http.MethodPost,
 		fmt.Sprintf("/api/v1/work-orders/%d/transition", woID), managerToken,
 		map[string]string{"to_status": common.WOStatusAssigned})
-	makeRequest(t, env.router, http.MethodPost,
+	assertStatus(t, w, http.StatusOK)
+	assignTechnicianToWO(t, env, woID, tech1User.ID)
+
+	w = makeRequest(t, env.router, http.MethodPost,
 		fmt.Sprintf("/api/v1/work-orders/%d/transition", woID), tech1Token,
 		map[string]string{"to_status": common.WOStatusInProgress})
+	assertStatus(t, w, http.StatusOK)
 
 	// Reassign without reason → 422.
 	w = makeRequest(t, env.router, http.MethodPost,
@@ -279,7 +295,9 @@ func TestWorkOrderCrossPropertyAccess(t *testing.T) {
 	})
 	assertStatus(t, w, http.StatusCreated)
 	var createResp struct {
-		Data struct{ ID uint64 `json:"id"` } `json:"data"`
+		Data struct {
+			ID uint64 `json:"id"`
+		} `json:"data"`
 	}
 	parseResponse(t, w, &createResp)
 	woID := createResp.Data.ID
@@ -303,8 +321,10 @@ func TestWorkOrderCostItem(t *testing.T) {
 	env := newWOEnv(t)
 
 	_, tenantPw := createTestUser(t, env.db, "ci_tenant", common.RoleTenant)
-	_, techPw := createTestUser(t, env.db, "ci_tech", common.RoleTechnician)
-	_, managerPw := createTestUser(t, env.db, "ci_manager", common.RolePropertyManager)
+	techUser, techPw := createTestUser(t, env.db, "ci_tech", common.RoleTechnician)
+	managerUser, managerPw := createTestUser(t, env.db, "ci_manager", common.RolePropertyManager)
+
+	assignManagerToProperty(t, env, managerUser.ID, 1)
 
 	tenantToken := loginUser(t, env.router, "ci_tenant", tenantPw)
 	techToken := loginUser(t, env.router, "ci_tech", techPw)
@@ -318,17 +338,23 @@ func TestWorkOrderCostItem(t *testing.T) {
 	})
 	assertStatus(t, w, http.StatusCreated)
 	var createResp struct {
-		Data struct{ ID uint64 `json:"id"` } `json:"data"`
+		Data struct {
+			ID uint64 `json:"id"`
+		} `json:"data"`
 	}
 	parseResponse(t, w, &createResp)
 	woID := createResp.Data.ID
 
-	makeRequest(t, env.router, http.MethodPost,
+	w = makeRequest(t, env.router, http.MethodPost,
 		fmt.Sprintf("/api/v1/work-orders/%d/transition", woID), managerToken,
 		map[string]string{"to_status": common.WOStatusAssigned})
-	makeRequest(t, env.router, http.MethodPost,
+	assertStatus(t, w, http.StatusOK)
+	assignTechnicianToWO(t, env, woID, techUser.ID)
+
+	w = makeRequest(t, env.router, http.MethodPost,
 		fmt.Sprintf("/api/v1/work-orders/%d/transition", woID), techToken,
 		map[string]string{"to_status": common.WOStatusInProgress})
+	assertStatus(t, w, http.StatusOK)
 
 	// Add a Labor cost item.
 	w = makeRequest(t, env.router, http.MethodPost,
@@ -369,8 +395,10 @@ func TestWorkOrderCostItem_InvalidType(t *testing.T) {
 	env := newWOEnv(t)
 
 	_, tenantPw := createTestUser(t, env.db, "ci2_tenant", common.RoleTenant)
-	_, techPw := createTestUser(t, env.db, "ci2_tech", common.RoleTechnician)
-	_, managerPw := createTestUser(t, env.db, "ci2_manager", common.RolePropertyManager)
+	techUser, techPw := createTestUser(t, env.db, "ci2_tech", common.RoleTechnician)
+	managerUser, managerPw := createTestUser(t, env.db, "ci2_manager", common.RolePropertyManager)
+
+	assignManagerToProperty(t, env, managerUser.ID, 1)
 
 	tenantToken := loginUser(t, env.router, "ci2_tenant", tenantPw)
 	techToken := loginUser(t, env.router, "ci2_tech", techPw)
@@ -383,17 +411,23 @@ func TestWorkOrderCostItem_InvalidType(t *testing.T) {
 	})
 	assertStatus(t, w, http.StatusCreated)
 	var cr struct {
-		Data struct{ ID uint64 `json:"id"` } `json:"data"`
+		Data struct {
+			ID uint64 `json:"id"`
+		} `json:"data"`
 	}
 	parseResponse(t, w, &cr)
 	woID := cr.Data.ID
 
-	makeRequest(t, env.router, http.MethodPost,
+	w = makeRequest(t, env.router, http.MethodPost,
 		fmt.Sprintf("/api/v1/work-orders/%d/transition", woID), managerToken,
 		map[string]string{"to_status": common.WOStatusAssigned})
-	makeRequest(t, env.router, http.MethodPost,
+	assertStatus(t, w, http.StatusOK)
+	assignTechnicianToWO(t, env, woID, techUser.ID)
+
+	w = makeRequest(t, env.router, http.MethodPost,
 		fmt.Sprintf("/api/v1/work-orders/%d/transition", woID), techToken,
 		map[string]string{"to_status": common.WOStatusInProgress})
+	assertStatus(t, w, http.StatusOK)
 
 	w = makeRequest(t, env.router, http.MethodPost,
 		fmt.Sprintf("/api/v1/work-orders/%d/cost-items", woID), techToken,
@@ -414,8 +448,10 @@ func TestWorkOrderRating_NotOwnTenant(t *testing.T) {
 
 	_, pw1 := createTestUser(t, env.db, "rat_tenant1", common.RoleTenant)
 	_, pw2 := createTestUser(t, env.db, "rat_tenant2", common.RoleTenant)
-	_, managerPw := createTestUser(t, env.db, "rat_manager", common.RolePropertyManager)
-	_, techPw := createTestUser(t, env.db, "rat_tech", common.RoleTechnician)
+	managerUser, managerPw := createTestUser(t, env.db, "rat_manager", common.RolePropertyManager)
+	techUser, techPw := createTestUser(t, env.db, "rat_tech", common.RoleTechnician)
+
+	assignManagerToProperty(t, env, managerUser.ID, 1)
 
 	token1 := loginUser(t, env.router, "rat_tenant1", pw1)
 	token2 := loginUser(t, env.router, "rat_tenant2", pw2)
@@ -430,24 +466,34 @@ func TestWorkOrderRating_NotOwnTenant(t *testing.T) {
 	})
 	assertStatus(t, w, http.StatusCreated)
 	var cr struct {
-		Data struct{ ID uint64 `json:"id"` } `json:"data"`
+		Data struct {
+			ID uint64 `json:"id"`
+		} `json:"data"`
 	}
 	parseResponse(t, w, &cr)
 	woID := cr.Data.ID
 
 	// Progress to Completed.
-	makeRequest(t, env.router, http.MethodPost,
+	w = makeRequest(t, env.router, http.MethodPost,
 		fmt.Sprintf("/api/v1/work-orders/%d/transition", woID), managerToken,
 		map[string]string{"to_status": common.WOStatusAssigned})
-	makeRequest(t, env.router, http.MethodPost,
+	assertStatus(t, w, http.StatusOK)
+	assignTechnicianToWO(t, env, woID, techUser.ID)
+
+	w = makeRequest(t, env.router, http.MethodPost,
 		fmt.Sprintf("/api/v1/work-orders/%d/transition", woID), techToken,
 		map[string]string{"to_status": common.WOStatusInProgress})
-	makeRequest(t, env.router, http.MethodPost,
+	assertStatus(t, w, http.StatusOK)
+
+	w = makeRequest(t, env.router, http.MethodPost,
 		fmt.Sprintf("/api/v1/work-orders/%d/transition", woID), techToken,
 		map[string]string{"to_status": common.WOStatusAwaitingApproval})
-	makeRequest(t, env.router, http.MethodPost,
+	assertStatus(t, w, http.StatusOK)
+
+	w = makeRequest(t, env.router, http.MethodPost,
 		fmt.Sprintf("/api/v1/work-orders/%d/transition", woID), managerToken,
 		map[string]string{"to_status": common.WOStatusCompleted})
+	assertStatus(t, w, http.StatusOK)
 
 	// Tenant2 tries to rate → must be 403.
 	w = makeRequest(t, env.router, http.MethodPost,
@@ -464,7 +510,7 @@ func TestWorkOrderRating_NotOwnTenant(t *testing.T) {
 func assignManagerToProperty(t *testing.T, env *woEnv, managerID, propertyID uint64) {
 	t.Helper()
 	if err := env.db.Exec(
-		"INSERT INTO property_staff_assignments (property_id, user_id, role, is_active, created_at) VALUES (?, ?, 'PropertyManager', true, datetime('now'))",
+		"INSERT INTO property_staff_assignments (property_id, user_id, role, is_active, created_at) VALUES (?, ?, 'PropertyManager', true, NOW())",
 		propertyID, managerID,
 	).Error; err != nil {
 		t.Fatalf("assignManagerToProperty: %v", err)
@@ -510,7 +556,9 @@ func TestWorkOrder_PMForbiddenOnTechnicianTransitions(t *testing.T) {
 	})
 	assertStatus(t, w, http.StatusCreated)
 	var cr struct {
-		Data struct{ ID uint64 `json:"id"` } `json:"data"`
+		Data struct {
+			ID uint64 `json:"id"`
+		} `json:"data"`
 	}
 	parseResponse(t, w, &cr)
 	woID := cr.Data.ID
@@ -566,7 +614,9 @@ func TestWorkOrderEvents(t *testing.T) {
 	env := newWOEnv(t)
 
 	_, tenantPw := createTestUser(t, env.db, "ev_tenant", common.RoleTenant)
-	_, managerPw := createTestUser(t, env.db, "ev_manager", common.RolePropertyManager)
+	managerUser, managerPw := createTestUser(t, env.db, "ev_manager", common.RolePropertyManager)
+
+	assignManagerToProperty(t, env, managerUser.ID, 1)
 
 	tenantToken := loginUser(t, env.router, "ev_tenant", tenantPw)
 	managerToken := loginUser(t, env.router, "ev_manager", managerPw)
@@ -578,15 +628,18 @@ func TestWorkOrderEvents(t *testing.T) {
 	})
 	assertStatus(t, w, http.StatusCreated)
 	var cr struct {
-		Data struct{ ID uint64 `json:"id"` } `json:"data"`
+		Data struct {
+			ID uint64 `json:"id"`
+		} `json:"data"`
 	}
 	parseResponse(t, w, &cr)
 	woID := cr.Data.ID
 
 	// Transition once.
-	makeRequest(t, env.router, http.MethodPost,
+	w = makeRequest(t, env.router, http.MethodPost,
 		fmt.Sprintf("/api/v1/work-orders/%d/transition", woID), managerToken,
 		map[string]string{"to_status": common.WOStatusAssigned})
+	assertStatus(t, w, http.StatusOK)
 
 	// Get events.
 	w = makeRequest(t, env.router, http.MethodGet,

@@ -336,6 +336,7 @@ func (s *Service) AssignStaff(propertyID uint64, req AssignStaffRequest, actorID
 		PropertyID: propertyID,
 		UserID:     req.UserID,
 		Role:       req.Role,
+		IsActive:   true,
 	}
 
 	if err := s.repo.AssignStaff(assignment); err != nil {
@@ -449,14 +450,35 @@ func (s *Service) CanManageProperty(actorID uint64, roles []string, propertyID u
 }
 
 // canManageProperty checks if the actor can manage the property.
-// Admin can manage any property. The assigned manager can manage their own property.
+// Admin can manage any property.
+// PropertyManagers can manage a property when they are either:
+//   - the direct manager on properties.manager_id, or
+//   - actively assigned to the property as PropertyManager staff.
 func (s *Service) canManageProperty(actorID uint64, roles []string, property *Property) bool {
 	if hasRole(roles, common.RoleSystemAdmin) {
 		return true
 	}
-	if hasRole(roles, common.RolePropertyManager) && property.ManagerID != nil && *property.ManagerID == actorID {
+
+	if !hasRole(roles, common.RolePropertyManager) {
+		return false
+	}
+
+	if property.ManagerID != nil && *property.ManagerID == actorID {
 		return true
 	}
+
+	assignments, err := s.repo.ListStaffByProperty(property.ID)
+	if err != nil {
+		return false
+	}
+	for _, assignment := range assignments {
+		if assignment.UserID == actorID &&
+			assignment.Role == common.RolePropertyManager &&
+			assignment.IsActive {
+			return true
+		}
+	}
+
 	return false
 }
 

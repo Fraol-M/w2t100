@@ -61,6 +61,7 @@ func (s *Service) GetFunnel(filters AnalyticsFilters) (*FunnelMetric, *common.Ap
 func (s *Service) GetRetention(filters AnalyticsFilters) (*RetentionMetric, *common.AppError) {
 	result, err := s.repo.RetentionMetrics(filters)
 	if err != nil {
+		fmt.Printf("GetRetention err: %v\n", err)
 		return nil, common.NewInternalError("failed to fetch retention metrics")
 	}
 	return result, nil
